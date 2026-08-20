@@ -317,7 +317,7 @@
       { id: "satelliteLabels", type: "raster", source: "satelliteLabels", layout: { visibility: "none" } },
       { id: "light", type: "raster", source: "light", layout: { visibility: "none" } }
     ],
-    terrain: { source: "terrainSource", exaggeration: 1.4 },
+    terrain: { source: "terrainSource", exaggeration: 1.2 },
     sky: {
       "sky-color": "#88c1e8",
       "sky-horizon-blend": 0.5,
@@ -342,6 +342,21 @@
   const mainTrack = tracks.find(t => t.id === mainTrackId);
   const initialBounds = boundsOf(mainTrack.coords);
 
+  // Cap how far the map can tilt. Raster tiles draped over 3D terrain get
+  // dramatically more expensive to render past ~65-70°, because the camera's
+  // view frustum reaches much further toward the horizon and pulls in far
+  // more tiles (both imagery and elevation) than a moderate tilt does — this
+  // is the single biggest cause of rotate/tilt jank in a raster+terrain setup.
+  const MAX_PITCH = 68;
+
+  // Cap the render resolution. On high-DPI/retina screens (devicePixelRatio
+  // 2-3), MapLibre renders at that many times the pixel count by default —
+  // which multiplies GPU cost for every terrain-draped tile on every frame
+  // of a rotate/tilt drag. Capping it (and see the adaptive scaling below)
+  // is usually the single highest-impact fix for this kind of lag.
+  const fullPixelRatio = window.devicePixelRatio || 1;
+  const initialPixelRatio = Math.min(fullPixelRatio, 2);
+
   const map = new maplibregl.Map({
     container: "map",
     style: style,
@@ -349,9 +364,32 @@
     zoom: 11,
     pitch: 55,
     bearing: -10,
-    maxPitch: 78,
+    maxPitch: MAX_PITCH,
+    pixelRatio: initialPixelRatio,
+    fadeDuration: 0, // skip the raster cross-fade animation; fewer blended draw calls while tiles stream in during a drag
     attributionControl: { compact: true }
   });
+
+  // --- Adaptive resolution: render at a lower pixel ratio *while* the user is
+  // actively rotating/tilting/panning, then snap back to full resolution once
+  // they let go. The map looks identical when still; it only trades a bit of
+  // sharpness for smoothness during the drag itself, which is when lag is felt.
+  if (typeof map.setPixelRatio === "function") {
+    const dragPixelRatio = Math.min(fullPixelRatio, 1);
+    let resLowered = false;
+    const lowerRes = () => {
+      if (!resLowered) { map.setPixelRatio(dragPixelRatio); resLowered = true; }
+    };
+    const restoreRes = () => {
+      if (resLowered) { map.setPixelRatio(initialPixelRatio); resLowered = false; }
+    };
+    map.on("rotatestart", lowerRes);
+    map.on("pitchstart", lowerRes);
+    map.on("dragstart", lowerRes);
+    map.on("rotateend", restoreRes);
+    map.on("pitchend", restoreRes);
+    map.on("dragend", restoreRes);
+  }
 
   let initialCamera = null;
 
@@ -366,12 +404,21 @@
     addWaypoints();
   });
 
+  // Throttle the pitch/bearing readout: 'pitch' and 'rotate' fire on every
+  // single animation frame during a drag, so writing to the DOM on every one
+  // of them adds unnecessary work right when the renderer is already busiest.
+  let readoutPending = false;
+  function updatePitchReadout() {
+    if (readoutPending) return;
+    readoutPending = true;
+    requestAnimationFrame(() => {
+      const el = document.getElementById("pitch-readout");
+      el.textContent = `Pitch ${Math.round(map.getPitch())}° · Bearing ${Math.round(map.getBearing())}°`;
+      readoutPending = false;
+    });
+  }
   map.on("pitch", updatePitchReadout);
   map.on("rotate", updatePitchReadout);
-  function updatePitchReadout() {
-    const el = document.getElementById("pitch-readout");
-    el.textContent = `Pitch ${Math.round(map.getPitch())}° · Bearing ${Math.round(map.getBearing())}°`;
-  }
 
   // ---- Base layer switcher ----
   const baseLayerGroups = {
@@ -531,7 +578,7 @@
 
   // ---- Tilt / rotate controls ----
   document.getElementById("btn-tilt-up").addEventListener("click", () => {
-    map.easeTo({ pitch: Math.min(78, map.getPitch() + 15), duration: 300 });
+    map.easeTo({ pitch: Math.min(MAX_PITCH, map.getPitch() + 15), duration: 300 });
   });
   document.getElementById("btn-tilt-down").addEventListener("click", () => {
     map.easeTo({ pitch: Math.max(0, map.getPitch() - 15), duration: 300 });
@@ -602,4 +649,3 @@
 
 </body>
 </html>
-
