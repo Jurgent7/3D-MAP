@@ -470,9 +470,7 @@
 
       const popupHtml = `
         <div class="popup-title">${t.name}</div>
-        <span class="popup-confidence ${confidenceClass[t.confidence]}">${confidenceLabel[t.confidence]}</span>
         <div class="popup-elev" style="margin-top:6px;">${t.length_km} km &middot; ${t.min_ele}–${t.max_ele} m elevation</div>
-        <div class="popup-desc">${t.note}</div>
       `;
       map.on("click", "track-line-" + t.id, (e) => {
         new maplibregl.Popup().setLngLat(e.lngLat).setHTML(popupHtml).addTo(map);
@@ -524,7 +522,6 @@
         <input type="checkbox" id="chk-${t.id}" ${t.id === mainTrackId ? "checked" : ""} style="margin-right:6px;">
         <span class="track-swatch" style="background:${t.color}"></span>
         <span class="track-label">${t.name}
-          <span class="popup-confidence ${confidenceClass[t.confidence]}" style="margin-left:4px;">${confidenceLabel[t.confidence]}</span>
           <div class="track-stats">${t.length_km} km, ${t.min_ele}–${t.max_ele} m</div>
         </span>`;
       const checkbox = row.querySelector("input");
@@ -555,7 +552,6 @@
         .setPopup(new maplibregl.Popup().setHTML(`
           <div class="popup-title">${w.name}</div>
           <div class="popup-elev">Elevation: ${w.elevation}</div>
-          <div class="popup-desc">${w.desc}</div>
           ${wpDirections}
         `))
         .addTo(map);
