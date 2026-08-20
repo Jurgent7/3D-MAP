@@ -6,7 +6,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
 <style>
-  html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; width: 100%;
+    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    overflow: hidden;           /* the page itself never scrolls */
+    overscroll-behavior: none;  /* stop iOS/Android rubber-band & pull-to-refresh from grabbing the drag */
+    touch-action: none;         /* don't let the browser interpret touches on this page as page gestures */
+    position: fixed;            /* belt-and-braces: pins the document so it can't be dragged at all */
+  }
   #map { width: 100%; height: 100vh; touch-action: none; }
 
   .legend {
@@ -19,6 +26,7 @@
     max-height: 80vh;
     max-width: 100%;
     overflow-y: auto;
+    touch-action: pan-y; /* let this panel scroll normally even though the page/map disable touch gestures */
     box-sizing: border-box;
   }
   .legend h4 { margin: 0 0 6px 0; font-size: 14px; }
@@ -96,6 +104,7 @@
   .btn-bar {
     display: flex; flex-direction: column; gap: 4px;
     background: white; border-radius: 8px; box-shadow: 0 1px 6px rgba(0,0,0,0.3); padding: 4px;
+    touch-action: manipulation;
   }
   .nav-btn {
     width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;
@@ -631,7 +640,21 @@
       },
       (err) => {
         btn.classList.remove("nav-btn-loading");
-        alert("Couldn't determine your location: " + err.message);
+        const blockedByIframe = /permissions policy|permissions-policy/i.test(err.message || "");
+        if (blockedByIframe) {
+          // This happens when the site embedding this map (e.g. a Wix iframe)
+          // doesn't grant the "geolocation" permission down to this page —
+          // the browser blocks the request before the user even sees a
+          // prompt. Opening this map as its own top-level tab always works,
+          // since there's no parent frame permission to be blocked by.
+          const openInNewTab = confirm(
+            "Location access is blocked inside this embedded map (the website hosting it hasn't enabled location permission for embedded content).\n\n" +
+            "Open the map in its own browser tab to use your location there?"
+          );
+          if (openInNewTab) window.open(window.location.href, "_blank");
+        } else {
+          alert("Couldn't determine your location: " + err.message);
+        }
       },
       { enableHighAccuracy: true, timeout: 10000 }
     );
